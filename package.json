@@ -1,0 +1,22 @@
+{
+  "name": "armafrags-hr-department",
+  "version": "1.0.0",
+  "description": "Discord bot for an international Arma Reforger league community.",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "deploy:commands": "tsx src/deploy-commands.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.0.0",
+    "dotenv": "^16.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
