@@ -1,5 +1,4 @@
 import { EmbedBuilder } from "discord.js";
-import { parseScheduledAtDate, parseScheduledAtParts } from "./calendarDates.js";
 import {
   getCalendarMatches,
   type CalendarEventType,
@@ -7,7 +6,6 @@ import {
 } from "./calendarStore.js";
 
 const MAX_PUBLIC_CALENDAR_MATCHES = 15;
-const CALENDAR_DAYS_RANGE = 365;
 
 function getEventMarker(eventType: CalendarEventType) {
   if (eventType === "Ranked") return "[Ranked]";
@@ -19,89 +17,20 @@ function getEventMarker(eventType: CalendarEventType) {
   return "[Other]";
 }
 
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    timeZone: "UTC"
-  }).format(date);
-}
-
-function formatTime(date: Date) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC"
-  }).format(date);
-}
-
-function getDateAndTime(match: CalendarMatch) {
-  const scheduledAtParts = parseScheduledAtParts(match.scheduledAt);
-
-  if (!scheduledAtParts) {
-    return {
-      date: match.scheduledAt,
-      time: "TBA"
-    };
-  }
-
-  const day = scheduledAtParts.day.toString().padStart(2, "0");
-  const month = scheduledAtParts.month.toString().padStart(2, "0");
-  const hour = scheduledAtParts.hour.toString().padStart(2, "0");
-  const minute = scheduledAtParts.minute.toString().padStart(2, "0");
-
-  return {
-    date: `${day}/${month}/${scheduledAtParts.year}`,
-    time: `${hour}:${minute} ${scheduledAtParts.zone}`
-  };
-}
-
-function isWithinCalendarRange(match: CalendarMatch) {
-  const parsedDate = parseScheduledAtDate(match.scheduledAt);
-
-  if (!parsedDate) {
-    return true;
-  }
-
-  const now = new Date();
-  const rangeStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-  const rangeEnd = new Date(
-    now.getTime() + CALENDAR_DAYS_RANGE * 24 * 60 * 60 * 1000
-  );
-
-  return parsedDate >= rangeStart && parsedDate <= rangeEnd;
-}
-
 function sortMatches(matches: CalendarMatch[]) {
   return [...matches].sort((a, b) => {
-    const dateA = parseScheduledAtDate(a.scheduledAt);
-    const dateB = parseScheduledAtDate(b.scheduledAt);
-
-    if (dateA && dateB) {
-      return dateA.getTime() - dateB.getTime();
-    }
-
-    if (dateA && !dateB) return -1;
-    if (!dateA && dateB) return 1;
-
     return a.scheduledAt.localeCompare(b.scheduledAt);
   });
 }
 
 function buildMatchField(match: CalendarMatch, index: number) {
-  const dateAndTime = getDateAndTime(match);
   const columnIndex = index % 3;
   const separatorPrefix = columnIndex === 0 ? "" : "| ";
 
   return {
     name: `${separatorPrefix}${index + 1}. ${getEventMarker(match.eventType)} ${match.homeTeam} vs ${match.awayTeam}`,
     value: [
-      `${separatorPrefix}Date: ${dateAndTime.date}`,
-      `${separatorPrefix}Hour: ${dateAndTime.time}`,
+      `${separatorPrefix}Date/time: ${match.scheduledAt || "Date TBA"}`,
       `${separatorPrefix}Map: ${match.map || "TBA"}`,
       `${separatorPrefix}Srv: ${match.server || "TBA"}`,
       `${separatorPrefix}ID: ${match.id}`
@@ -162,15 +91,14 @@ function buildCalendarEmbed(matches: CalendarMatch[], totalMatches: number) {
 
 export async function buildCalendarEmbeds() {
   const allMatches = await getCalendarMatches();
-  const matchesWithinRange = allMatches.filter(isWithinCalendarRange);
-  const upcomingMatches = sortMatches(matchesWithinRange).slice(
+  const upcomingMatches = sortMatches(allMatches).slice(
     0,
     MAX_PUBLIC_CALENDAR_MATCHES
   );
 
   return {
-    embeds: [buildCalendarEmbed(upcomingMatches, matchesWithinRange.length)],
-    totalMatches: matchesWithinRange.length,
+    embeds: [buildCalendarEmbed(upcomingMatches, allMatches.length)],
+    totalMatches: allMatches.length,
     shownMatches: upcomingMatches.length
   };
 }

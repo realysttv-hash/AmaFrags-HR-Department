@@ -44,13 +44,6 @@ function buildMatchOption(match: CalendarMatch) {
     .setValue(match.id);
 }
 
-function buildInvalidDateMessage(value: string) {
-  return [
-    `Invalid proposed date: \`${value}\`.`,
-    "Use a format like `2026-05-04 20:00 UTC`, `2026-05-04 21:00 CET`, `2026-05-04 22:00 CEST`, or `Date TBA`."
-  ].join("\n");
-}
-
 async function getSelectedMatch(matchId: string) {
   const matches = await getCalendarMatches();
 
@@ -111,7 +104,7 @@ export async function handleMatchRescheduleSelect(
       {
         customId: "proposed_date",
         label: "Proposed new date and time",
-        placeholder: "Example: 2026-05-05 21:00 UTC",
+        placeholder: "Example: 20:00 UTC",
         maxLength: 80
       },
       {
@@ -150,16 +143,9 @@ export async function handleMatchRescheduleModal(
     return true;
   }
 
-  const proposedDateRaw = getRequiredModalValue(interaction, "proposed_date");
-  const proposedDate = normalizeScheduledAtInput(proposedDateRaw);
-
-  if (!proposedDate) {
-    await interaction.reply({
-      content: buildInvalidDateMessage(proposedDateRaw),
-      ephemeral: true
-    });
-    return true;
-  }
+  const proposedDate = normalizeScheduledAtInput(
+    getRequiredModalValue(interaction, "proposed_date")
+  );
 
   const opponentConsent = getRequiredModalValue(interaction, "opponent_consent");
   const reason = getRequiredModalValue(interaction, "reason");

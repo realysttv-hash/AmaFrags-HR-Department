@@ -62,7 +62,7 @@ const commands = [
     .addStringOption((option) =>
       option
         .setName("scheduled-at")
-        .setDescription("Example: 2026-05-04 20:00 UTC, 21:00 CET, or Date TBA.")
+        .setDescription("Free text, saved exactly as entered. Example: 18:00 CET.")
         .setRequired(true)
     )
     .addStringOption((option) =>
@@ -117,7 +117,7 @@ const commands = [
     .addStringOption((option) =>
       option
         .setName("scheduled-at")
-        .setDescription("Example: 2026-05-04 20:00 UTC, 21:00 CET, or Date TBA.")
+        .setDescription("Free text, saved exactly as entered. Example: 20:00 UTC.")
         .setRequired(false)
     )
     .addStringOption((option) =>

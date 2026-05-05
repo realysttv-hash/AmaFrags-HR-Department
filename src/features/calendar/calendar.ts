@@ -23,8 +23,6 @@ import {
 } from "./calendarStore.js";
 
 const CALENDAR_MESSAGE_CONTENT = "## Arma Reforger League Calendar";
-const DATE_HELP_TEXT =
-  "Use a format like `2026-05-04 20:00 UTC`, `2026-05-04 21:00 CET`, `2026-05-04 22:00 CEST`, or `Date TBA`.";
 
 function userIsAdministrator(interaction: ChatInputCommandInteraction) {
   return interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ?? false;
@@ -76,14 +74,6 @@ function getNormalizedScheduledAt(
   if (!value) return null;
 
   return normalizeScheduledAtInput(value);
-}
-
-function buildInvalidDateMessage(rawValue: string | null) {
-  const prefix = rawValue
-    ? `Invalid scheduled date: \`${rawValue}\`.`
-    : "Invalid scheduled date.";
-
-  return `${prefix}\n${DATE_HELP_TEXT}`;
 }
 
 function buildMatchEmbed(
@@ -235,16 +225,7 @@ export async function handleAddMatchCommand(
     return true;
   }
 
-  const scheduledAtRaw = interaction.options.getString("scheduled-at", true);
   const scheduledAt = getNormalizedScheduledAt(interaction, true);
-
-  if (!scheduledAt) {
-    await interaction.reply({
-      content: buildInvalidDateMessage(scheduledAtRaw),
-      ephemeral: true
-    });
-    return true;
-  }
 
   await interaction.deferReply({ ephemeral: true });
 
@@ -350,17 +331,7 @@ export async function handleEditMatchCommand(
   if (awayTeam) update.awayTeam = awayTeam;
 
   if (scheduledAtRaw !== null) {
-    const scheduledAt = normalizeScheduledAtInput(scheduledAtRaw);
-
-    if (!scheduledAt) {
-      await interaction.reply({
-        content: buildInvalidDateMessage(scheduledAtRaw),
-        ephemeral: true
-      });
-      return true;
-    }
-
-    update.scheduledAt = scheduledAt;
+    update.scheduledAt = normalizeScheduledAtInput(scheduledAtRaw);
   }
 
   if (server) update.server = server;

@@ -42,13 +42,6 @@ function extractUserId(value: string | null) {
   return match?.[1] ?? null;
 }
 
-function buildInvalidDateMessage(value: string) {
-  return [
-    `Invalid match date: \`${value}\`.`,
-    "Use a format like `2026-05-04 20:00 UTC`, `2026-05-04 21:00 CET`, `2026-05-04 22:00 CEST`, or `Date TBA`."
-  ].join("\n");
-}
-
 function buildAcceptChallengeRow(challengeId: string) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
@@ -127,7 +120,7 @@ export async function handleLookingForGameButton(interaction: ButtonInteraction)
     {
       customId: "scheduled_at",
       label: "Match date and time",
-      placeholder: "Example: 2026-05-04 20:00 UTC",
+      placeholder: "Example: 18:00 CET",
       maxLength: 80
     },
     {
@@ -145,7 +138,7 @@ export async function handleLookingForGameButton(interaction: ButtonInteraction)
     {
       customId: "notes",
       label: "Additional notes",
-      placeholder: "Format, rules, timezone, contact details, etc.",
+      placeholder: "Format, rules, contact details, etc.",
       style: TextInputStyle.Paragraph,
       required: false,
       maxLength: 1000
@@ -161,16 +154,9 @@ export async function handleLookingForGameModal(
 ) {
   if (interaction.customId !== lfgModalCustomId) return false;
 
-  const scheduledAtRaw = getRequiredModalValue(interaction, "scheduled_at");
-  const scheduledAt = normalizeScheduledAtInput(scheduledAtRaw);
-
-  if (!scheduledAt) {
-    await interaction.reply({
-      content: buildInvalidDateMessage(scheduledAtRaw),
-      ephemeral: true
-    });
-    return true;
-  }
+  const scheduledAt = normalizeScheduledAtInput(
+    getRequiredModalValue(interaction, "scheduled_at")
+  );
 
   await interaction.deferReply({ ephemeral: true });
 

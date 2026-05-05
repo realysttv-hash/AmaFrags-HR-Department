@@ -27,7 +27,7 @@ export async function handleServerBookingButton(interaction: ButtonInteraction) 
     {
       customId: "date",
       label: "Training date",
-      placeholder: "Example: 2026-05-04",
+      placeholder: "Example: Monday",
       maxLength: 40
     },
     {

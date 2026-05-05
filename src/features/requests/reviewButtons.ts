@@ -18,7 +18,6 @@ import {
   addCalendarMatch,
   editCalendarMatch
 } from "../calendar/calendarStore.js";
-import { normalizeScheduledAtInput } from "../calendar/calendarDates.js";
 import { sendAdminLog } from "../adminLog/adminLog.js";
 import { reviewButtonPrefixes } from "./requestBuilder.js";
 import { sendPublicUpdate } from "../updates/publicUpdates.js";
@@ -343,18 +342,7 @@ function getServerBookingDetails(embed: Embed) {
 }
 
 function normalizeServerBookingDateTime(trainingDate: string, time: string) {
-  const timeMatch = time.match(/(\d{1,2}:\d{2})(?:\s*-\s*\d{1,2}:\d{2})?\s*(UTC|CET|CEST)?/i);
-
-  if (!timeMatch) {
-    return normalizeScheduledAtInput(trainingDate) ?? `${trainingDate} ${time}`;
-  }
-
-  const [, startTime, zone = "UTC"] = timeMatch;
-
-  return (
-    normalizeScheduledAtInput(`${trainingDate} ${startTime} ${zone.toUpperCase()}`) ??
-    `${trainingDate} ${time}`
-  );
+  return `${trainingDate} ${time}`.trim();
 }
 
 function getMatchRescheduleDetails(embed: Embed) {
