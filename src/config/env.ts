@@ -23,5 +23,7 @@ export const env = {
   calendarChannelId: getOptionalEnv("CALENDAR_CHANNEL_ID"),
   panelChannelId: getOptionalEnv("PANEL_CHANNEL_ID"),
   logChannelId: getOptionalEnv("LOG_CHANNEL_ID"),
-  lookingForGameChannelId: getOptionalEnv("LOOKING_FOR_GAME_CHANNEL_ID")
+  lookingForGameChannelId: getOptionalEnv("LOOKING_FOR_GAME_CHANNEL_ID"),
+  checklistChannelId: getOptionalEnv("CHECKLIST_CHANNEL_ID"),
+  updatesChannelId: getOptionalEnv("UPDATES_CHANNEL_ID")
 };

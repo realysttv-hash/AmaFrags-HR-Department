@@ -14,3 +14,8 @@ data/*.tmp
 *.sqlite3
 
 .DS_Store
+
+.idea/
+*.zip
+/calendarDates.js
+/calendarEmbeds.js

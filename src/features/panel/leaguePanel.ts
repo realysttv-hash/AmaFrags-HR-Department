@@ -23,6 +23,7 @@ function buildLeaguePanelEmbed() {
         "**Available actions:**",
         "- Register a team",
         "- Request a match reschedule",
+        "- Submit a match checklist",
         "- Book a training server",
         "- Request a player transfer",
         "- Post a Looking for Game challenge",
@@ -60,6 +61,11 @@ function buildLeaguePanelComponents() {
       .setCustomId("looking_for_game")
       .setLabel("Looking for Game")
       .setStyle(ButtonStyle.Primary),
+
+    new ButtonBuilder()
+      .setCustomId("match_checklist")
+      .setLabel("Checklist")
+      .setStyle(ButtonStyle.Secondary),
 
     new ButtonBuilder()
       .setCustomId("view_calendar")

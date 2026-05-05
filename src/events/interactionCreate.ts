@@ -23,6 +23,13 @@ import {
   handleMatchRescheduleSelect
 } from "../features/matches/matchReschedule.js";
 import {
+  handleMatchChecklistButton,
+  handleMatchChecklistConfirmButton,
+  handleMatchChecklistConfirmRoleSelect,
+  handleMatchChecklistModal,
+  handleMatchChecklistSelect
+} from "../features/matches/matchChecklist.js";
+import {
   handleServerBookingButton,
   handleServerBookingModal
 } from "../features/serverBookings/serverBooking.js";
@@ -31,18 +38,54 @@ import {
   handleTransferRequestModal
 } from "../features/transfers/transferRequest.js";
 import {
+  handleApprovalRoleSelect,
   handleRejectReasonModal,
   handleReviewButton
 } from "../features/requests/reviewButtons.js";
 import {
   handleAcceptLookingForGameModal,
   handleAcceptLookingForGameButton,
+  handleCancelLookingForGameButton,
   handleLookingForGameButton,
   handleLookingForGameModal
 } from "../features/lookingForGame/lookingForGame.js";
 import { handleBotConfigCommand } from "../features/configuration/botConfig.js";
 
 type CommandHandler = (interaction: ChatInputCommandInteraction) => Promise<unknown>;
+
+function isDiscordApiErrorCode(error: unknown, code: number) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: unknown }).code === code
+  );
+}
+
+async function replyWithInteractionError(interaction: Interaction) {
+  if (!interaction.isRepliable()) return;
+
+  try {
+    if (interaction.replied || interaction.deferred) {
+      await interaction.followUp({
+        content: "Something went wrong while processing this interaction.",
+        ephemeral: true
+      });
+      return;
+    }
+
+    await interaction.reply({
+      content: "Something went wrong while processing this interaction.",
+      ephemeral: true
+    });
+  } catch (replyError) {
+    if (isDiscordApiErrorCode(replyError, 40060)) {
+      return;
+    }
+
+    throw replyError;
+  }
+}
 
 async function handlePingCommand(interaction: ChatInputCommandInteraction) {
   await interaction.reply({
@@ -85,10 +128,13 @@ const buttonHandlers = [
   handleReviewButton,
   handleTeamRegistrationButton,
   handleMatchRescheduleButton,
+  handleMatchChecklistButton,
+  handleMatchChecklistConfirmButton,
   handleServerBookingButton,
   handleTransferRequestButton,
   handleLookingForGameButton,
   handleAcceptLookingForGameButton,
+  handleCancelLookingForGameButton,
   handleCalendarButton
 ];
 
@@ -96,6 +142,7 @@ const modalHandlers = [
   handleRejectReasonModal,
   handleTeamRegistrationModal,
   handleMatchRescheduleModal,
+  handleMatchChecklistModal,
   handleServerBookingModal,
   handleTransferRequestModal,
   handleLookingForGameModal,
@@ -103,7 +150,13 @@ const modalHandlers = [
 ];
 
 const selectMenuHandlers = [
-  handleMatchRescheduleSelect
+  handleMatchRescheduleSelect,
+  handleMatchChecklistSelect
+];
+
+const roleSelectMenuHandlers = [
+  handleApprovalRoleSelect,
+  handleMatchChecklistConfirmRoleSelect
 ];
 
 export async function onInteractionCreate(interaction: Interaction) {
@@ -130,6 +183,12 @@ export async function onInteractionCreate(interaction: Interaction) {
       }
     }
 
+    if (interaction.isRoleSelectMenu()) {
+      for (const handler of roleSelectMenuHandlers) {
+        if (await handler(interaction)) return;
+      }
+    }
+
     if (interaction.isModalSubmit()) {
       for (const handler of modalHandlers) {
         if (await handler(interaction)) return;
@@ -138,18 +197,6 @@ export async function onInteractionCreate(interaction: Interaction) {
   } catch (error) {
     console.error("Interaction error:", error);
 
-    if (interaction.isRepliable()) {
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({
-          content: "Something went wrong while processing this interaction.",
-          ephemeral: true
-        });
-      } else {
-        await interaction.reply({
-          content: "Something went wrong while processing this interaction.",
-          ephemeral: true
-        });
-      }
-    }
+    await replyWithInteractionError(interaction);
   }
 }

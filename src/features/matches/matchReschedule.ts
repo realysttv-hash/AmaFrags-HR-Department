@@ -169,7 +169,7 @@ export async function handleMatchRescheduleModal(
   const embed = new EmbedBuilder()
     .setTitle("Match Reschedule Request")
     .setDescription("A calendar match reschedule request has been submitted.")
-    .setColor(0xfaa61a)
+    .setColor(0x9b59b6)
     .addFields(
       {
         name: "Request ID",

@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import { parseScheduledAtDate } from "./calendarDates.js";
+import { parseScheduledAtDate, parseScheduledAtParts } from "./calendarDates.js";
 import {
   getCalendarMatches,
   type CalendarEventType,
@@ -38,18 +38,23 @@ function formatTime(date: Date) {
 }
 
 function getDateAndTime(match: CalendarMatch) {
-  const parsedDate = parseScheduledAtDate(match.scheduledAt);
+  const scheduledAtParts = parseScheduledAtParts(match.scheduledAt);
 
-  if (!parsedDate) {
+  if (!scheduledAtParts) {
     return {
       date: match.scheduledAt,
       time: "TBA"
     };
   }
 
+  const day = scheduledAtParts.day.toString().padStart(2, "0");
+  const month = scheduledAtParts.month.toString().padStart(2, "0");
+  const hour = scheduledAtParts.hour.toString().padStart(2, "0");
+  const minute = scheduledAtParts.minute.toString().padStart(2, "0");
+
   return {
-    date: formatDate(parsedDate),
-    time: `${formatTime(parsedDate)} UTC`
+    date: `${day}/${month}/${scheduledAtParts.year}`,
+    time: `${hour}:${minute} ${scheduledAtParts.zone}`
   };
 }
 

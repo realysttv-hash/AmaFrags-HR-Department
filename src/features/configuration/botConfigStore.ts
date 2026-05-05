@@ -7,7 +7,9 @@ export const configurableChannelKeys = [
   "requestsChannelId",
   "logChannelId",
   "calendarChannelId",
-  "lookingForGameChannelId"
+  "lookingForGameChannelId",
+  "checklistChannelId",
+  "updatesChannelId"
 ] as const;
 
 export type ConfigurableChannelKey = (typeof configurableChannelKeys)[number];
@@ -19,7 +21,9 @@ export const configurableChannelLabels: Record<ConfigurableChannelKey, string> =
   requestsChannelId: "Requests",
   logChannelId: "Admin logs",
   calendarChannelId: "Calendar",
-  lookingForGameChannelId: "Looking for Game"
+  lookingForGameChannelId: "Looking for Game",
+  checklistChannelId: "Match checklists",
+  updatesChannelId: "Public updates"
 };
 
 type ConfigEntry = {
@@ -44,7 +48,9 @@ function getFallbackBotConfig(): BotConfig {
     requestsChannelId: env.requestsChannelId,
     logChannelId: env.logChannelId,
     calendarChannelId: env.calendarChannelId,
-    lookingForGameChannelId: env.lookingForGameChannelId
+    lookingForGameChannelId: env.lookingForGameChannelId,
+    checklistChannelId: env.checklistChannelId,
+    updatesChannelId: env.updatesChannelId
   };
 }
 

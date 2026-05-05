@@ -21,7 +21,9 @@ const botConfigDestinationChoices = [
   { name: "Requests", value: "requestsChannelId" },
   { name: "Admin logs", value: "logChannelId" },
   { name: "Calendar", value: "calendarChannelId" },
-  { name: "Looking for Game", value: "lookingForGameChannelId" }
+  { name: "Looking for Game", value: "lookingForGameChannelId" },
+  { name: "Match checklists", value: "checklistChannelId" },
+  { name: "Public updates", value: "updatesChannelId" }
 ];
 
 const commands = [

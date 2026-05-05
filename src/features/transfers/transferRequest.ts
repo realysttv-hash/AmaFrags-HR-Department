@@ -71,7 +71,7 @@ export async function handleTransferRequestModal(
   const embed = new EmbedBuilder()
     .setTitle("Player Transfer Request")
     .setDescription("A new player transfer request has been submitted.")
-    .setColor(0x9b59b6)
+    .setColor(0xf1c40f)
     .addFields(
       {
         name: "Request ID",

@@ -25,6 +25,7 @@ import { sendRequestToRequestsChannel } from "../requests/sendRequest.js";
 const lfgButtonCustomId = "looking_for_game";
 const lfgModalCustomId = "looking_for_game_modal";
 const acceptChallengePrefix = "accept_lfg:";
+const cancelChallengePrefix = "cancel_lfg:";
 const acceptChallengeModalPrefix = "accept_lfg_modal:";
 const eventType = "Looking for Game";
 const pendingChallengeAccepts = new Set<string>();
@@ -53,7 +54,12 @@ function buildAcceptChallengeRow(challengeId: string) {
     new ButtonBuilder()
       .setCustomId(`${acceptChallengePrefix}${challengeId}`)
       .setLabel("Accept Challenge")
-      .setStyle(ButtonStyle.Success)
+      .setStyle(ButtonStyle.Success),
+
+    new ButtonBuilder()
+      .setCustomId(`${cancelChallengePrefix}${challengeId}`)
+      .setLabel("Cancel")
+      .setStyle(ButtonStyle.Danger)
   );
 }
 
@@ -181,7 +187,7 @@ export async function handleLookingForGameModal(
   const embed = new EmbedBuilder()
     .setTitle("Looking for Game")
     .setDescription("A new match challenge is open.")
-    .setColor(0xf59e0b)
+    .setColor(0xed4245)
     .addFields(
       {
         name: "Challenge ID",
@@ -243,7 +249,7 @@ export async function handleLookingForGameModal(
   await sendAdminLog(interaction.client, {
     title: "LFG Challenge Posted",
     description: `${challenger} is looking for a game.`,
-    color: 0xf59e0b,
+    color: 0xed4245,
     fields: [
       {
         name: "Challenge ID",
@@ -339,6 +345,62 @@ export async function handleAcceptLookingForGameButton(
   return true;
 }
 
+export async function handleCancelLookingForGameButton(
+  interaction: ButtonInteraction
+) {
+  if (!interaction.customId.startsWith(cancelChallengePrefix)) return false;
+
+  const challengeId = interaction.customId.slice(cancelChallengePrefix.length);
+  const oldEmbed = interaction.message.embeds[0];
+
+  if (!oldEmbed) {
+    await interaction.reply({
+      content: "This challenge message does not contain challenge details.",
+      ephemeral: true
+    });
+    return true;
+  }
+
+  const submittedByUserId = extractUserId(findEmbedField(oldEmbed, "Submitted by"));
+
+  if (submittedByUserId !== interaction.user.id) {
+    await interaction.reply({
+      content: "Only the user who posted this challenge can cancel it.",
+      ephemeral: true
+    });
+    return true;
+  }
+
+  pendingChallengeAccepts.delete(challengeId);
+
+  await interaction.reply({
+    content: "Your Looking for Game challenge has been cancelled.",
+    ephemeral: true
+  });
+
+  await interaction.message.delete();
+
+  await sendAdminLog(interaction.client, {
+    title: "LFG Challenge Cancelled",
+    description: "A Looking for Game challenge was cancelled by its author.",
+    color: 0xed4245,
+    fields: [
+      {
+        name: "Challenge ID",
+        value: challengeId,
+        inline: true
+      },
+      {
+        name: "Cancelled by",
+        value: `${interaction.user}`,
+        inline: true
+      }
+    ]
+  });
+
+  return true;
+}
+
 export async function handleAcceptLookingForGameModal(
   interaction: ModalSubmitInteraction
 ) {
@@ -387,7 +449,7 @@ export async function handleAcceptLookingForGameModal(
     const requestEmbed = new EmbedBuilder()
       .setTitle("Looking for Game Match Approval")
       .setDescription("A looking-for-game challenge has been accepted and needs review.")
-      .setColor(0xf59e0b)
+      .setColor(0xed4245)
       .addFields(
         {
           name: "Request ID",
@@ -466,7 +528,7 @@ export async function handleAcceptLookingForGameModal(
     await sendAdminLog(interaction.client, {
       title: "LFG Challenge Accepted",
       description: `${challenger} vs ${opponent}`,
-      color: 0xfaa61a,
+      color: 0xed4245,
       fields: [
         {
           name: "Challenge ID",
@@ -501,7 +563,7 @@ export async function handleAcceptLookingForGameModal(
       "Status",
       `Pending admin approval - accepted by ${opponent}`,
       false
-    ).setColor(0xfaa61a);
+    ).setColor(0xed4245);
 
     await challengeMessage.edit({
       embeds: [updatedEmbed],

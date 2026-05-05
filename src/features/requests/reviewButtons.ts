@@ -4,11 +4,14 @@ import {
   EmbedBuilder,
   ModalBuilder,
   PermissionFlagsBits,
+  RoleSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
   type ButtonInteraction,
   type Embed,
-  type ModalSubmitInteraction
+  type Message,
+  type ModalSubmitInteraction,
+  type RoleSelectMenuInteraction
 } from "discord.js";
 import { publishCalendarToChannel } from "../calendar/calendar.js";
 import {
@@ -18,9 +21,20 @@ import {
 import { normalizeScheduledAtInput } from "../calendar/calendarDates.js";
 import { sendAdminLog } from "../adminLog/adminLog.js";
 import { reviewButtonPrefixes } from "./requestBuilder.js";
+import { sendPublicUpdate } from "../updates/publicUpdates.js";
 
 const rejectReasonModalPrefix = "reject_reason:";
+const approvalRoleSelectPrefix = "approval_roles:";
 const rejectionSessionTtlMs = 15 * 60 * 1000;
+const approvalSessionTtlMs = 15 * 60 * 1000;
+
+const requestColors = {
+  matchReschedule: 0x9b59b6,
+  serverBooking: 0x57f287,
+  transferRequest: 0xf1c40f,
+  lookingForGame: 0xed4245,
+  teamRegistration: 0x5865f2
+};
 
 type PendingRejectionContext = {
   channelId: string;
@@ -30,7 +44,18 @@ type PendingRejectionContext = {
   timeout: NodeJS.Timeout;
 };
 
+type PendingApprovalContext = {
+  channelId: string;
+  messageId: string;
+  reviewerId: string;
+  reviewCustomId: string;
+  timeout: NodeJS.Timeout;
+};
+
+type ApprovalInteraction = ButtonInteraction | RoleSelectMenuInteraction;
+
 const pendingRejections = new Map<string, PendingRejectionContext>();
+const pendingApprovals = new Map<string, PendingApprovalContext>();
 
 export function isReviewButton(customId: string): boolean {
   return reviewButtonPrefixes.some((prefix) => customId.startsWith(prefix));
@@ -64,6 +89,44 @@ function popPendingRejection(rejectionContextId: string) {
   return context;
 }
 
+function setPendingApproval(
+  approvalContextId: string,
+  context: Omit<PendingApprovalContext, "timeout">
+) {
+  const timeout = setTimeout(() => {
+    pendingApprovals.delete(approvalContextId);
+  }, approvalSessionTtlMs);
+
+  timeout.unref();
+  pendingApprovals.set(approvalContextId, {
+    ...context,
+    timeout
+  });
+}
+
+function popPendingApproval(approvalContextId: string) {
+  const context = pendingApprovals.get(approvalContextId);
+
+  if (!context) {
+    return null;
+  }
+
+  clearTimeout(context.timeout);
+  pendingApprovals.delete(approvalContextId);
+
+  return context;
+}
+
+function buildApprovalRoleSelectRow(approvalContextId: string) {
+  return new ActionRowBuilder<RoleSelectMenuBuilder>().addComponents(
+    new RoleSelectMenuBuilder()
+      .setCustomId(`${approvalRoleSelectPrefix}${approvalContextId}`)
+      .setPlaceholder("Select team role(s) to mention in the public update")
+      .setMinValues(1)
+      .setMaxValues(5)
+  );
+}
+
 function findEmbedField(embed: Embed, fieldName: string) {
   return embed.fields.find((field) => field.name === fieldName)?.value ?? null;
 }
@@ -90,6 +153,38 @@ function getRequestTitle(embed: Embed) {
 
 function getRequestId(embed: Embed) {
   return findEmbedField(embed, "Request ID") ?? "Not provided.";
+}
+
+function formatRoleMentions(roleIds: string[]) {
+  return roleIds.length > 0
+    ? roleIds.map((roleId) => `<@&${roleId}>`).join(" ")
+    : "No roles selected.";
+}
+
+async function sendApprovalPublicUpdate(
+  interaction: ApprovalInteraction,
+  options: {
+    title: string;
+    description?: string;
+    color: number;
+    roleIds: string[];
+    fields: { name: string; value: string; inline?: boolean }[];
+  }
+) {
+  return sendPublicUpdate(interaction.client, {
+    title: options.title,
+    description: options.description,
+    color: options.color,
+    roleIds: options.roleIds,
+    fields: [
+      ...options.fields,
+      {
+        name: "Confirmed by",
+        value: `${interaction.user}`,
+        inline: true
+      }
+    ]
+  });
 }
 
 function buildApprovedEmbed(oldEmbed: Embed, reviewedBy: string) {
@@ -126,7 +221,7 @@ function buildRejectedEmbed(oldEmbed: Embed, reviewedBy: string, reason: string)
 }
 
 async function trySendApprovalDm(
-  interaction: ButtonInteraction,
+  interaction: ApprovalInteraction,
   userId: string,
   requestTitle: string
 ) {
@@ -176,7 +271,7 @@ async function trySendRejectionDm(
 }
 
 async function trySendCustomDm(
-  interaction: ButtonInteraction | ModalSubmitInteraction,
+  interaction: ApprovalInteraction | ModalSubmitInteraction,
   userId: string,
   content: string
 ) {
@@ -282,8 +377,10 @@ function getMatchRescheduleDetails(embed: Embed) {
 }
 
 async function handleServerBookingApproval(
-  interaction: ButtonInteraction,
-  oldEmbed: Embed
+  interaction: ApprovalInteraction,
+  requestMessage: Message,
+  oldEmbed: Embed,
+  roleIds: string[]
 ) {
   await interaction.deferUpdate();
 
@@ -310,7 +407,7 @@ async function handleServerBookingApproval(
       inline: true
     });
 
-  await interaction.message.edit({
+  await requestMessage.edit({
     embeds: [updatedEmbed],
     components: []
   });
@@ -352,7 +449,41 @@ async function handleServerBookingApproval(
       },
       {
         name: "Request message",
-        value: interaction.message.url,
+        value: requestMessage.url,
+        inline: false
+      }
+    ]
+  });
+
+  const publicUpdateSent = await sendApprovalPublicUpdate(interaction, {
+    title: "Training Server Booking Approved",
+    description: `${details.team} training session has been approved.`,
+    color: requestColors.serverBooking,
+    roleIds,
+    fields: [
+      {
+        name: "Team",
+        value: details.team,
+        inline: true
+      },
+      {
+        name: "Scheduled at",
+        value: calendarMatch.scheduledAt,
+        inline: true
+      },
+      {
+        name: "Server",
+        value: calendarMatch.server,
+        inline: true
+      },
+      {
+        name: "Map",
+        value: calendarMatch.map,
+        inline: true
+      },
+      {
+        name: "Mentioned roles",
+        value: formatRoleMentions(roleIds),
         inline: false
       }
     ]
@@ -379,15 +510,17 @@ async function handleServerBookingApproval(
 
   await interaction.followUp({
     content: dmSent
-      ? "The training server booking has been approved, added to the calendar, and the requester was notified."
-      : "The training server booking has been approved and added to the calendar, but I could not send a DM to the requester.",
+      ? `The training server booking has been approved, added to the calendar, and the requester was notified.${publicUpdateSent ? "\nPublic update posted." : "\nPublic updates channel is not configured or unavailable."}`
+      : `The training server booking has been approved and added to the calendar, but I could not send a DM to the requester.${publicUpdateSent ? "\nPublic update posted." : "\nPublic updates channel is not configured or unavailable."}`,
     ephemeral: true
   });
 }
 
 async function handleMatchRescheduleApproval(
-  interaction: ButtonInteraction,
-  oldEmbed: Embed
+  interaction: ApprovalInteraction,
+  requestMessage: Message,
+  oldEmbed: Embed,
+  roleIds: string[]
 ) {
   await interaction.deferUpdate();
 
@@ -422,7 +555,7 @@ async function handleMatchRescheduleApproval(
       inline: false
     });
 
-  await interaction.message.edit({
+  await requestMessage.edit({
     embeds: [updatedEmbed],
     components: []
   });
@@ -459,7 +592,36 @@ async function handleMatchRescheduleApproval(
       },
       {
         name: "Request message",
-        value: interaction.message.url,
+        value: requestMessage.url,
+        inline: false
+      }
+    ]
+  });
+
+  const publicUpdateSent = await sendApprovalPublicUpdate(interaction, {
+    title: "Match Reschedule Approved",
+    description: details.match,
+    color: requestColors.matchReschedule,
+    roleIds,
+    fields: [
+      {
+        name: "Previous date",
+        value: details.currentDate,
+        inline: true
+      },
+      {
+        name: "New date",
+        value: updatedMatch.scheduledAt,
+        inline: true
+      },
+      {
+        name: "Server",
+        value: updatedMatch.server,
+        inline: true
+      },
+      {
+        name: "Mentioned roles",
+        value: formatRoleMentions(roleIds),
         inline: false
       }
     ]
@@ -485,15 +647,17 @@ async function handleMatchRescheduleApproval(
 
   await interaction.followUp({
     content: dmSent
-      ? "The match has been rescheduled and the public calendar has been updated."
-      : "The match has been rescheduled and the public calendar has been updated, but I could not send a DM to the requester.",
+      ? `The match has been rescheduled and the public calendar has been updated.${publicUpdateSent ? "\nPublic update posted." : "\nPublic updates channel is not configured or unavailable."}`
+      : `The match has been rescheduled and the public calendar has been updated, but I could not send a DM to the requester.${publicUpdateSent ? "\nPublic update posted." : "\nPublic updates channel is not configured or unavailable."}`,
     ephemeral: true
   });
 }
 
 async function handleLookingForGameApproval(
-  interaction: ButtonInteraction,
-  oldEmbed: Embed
+  interaction: ApprovalInteraction,
+  requestMessage: Message,
+  oldEmbed: Embed,
+  roleIds: string[]
 ) {
   await interaction.deferUpdate();
 
@@ -521,7 +685,7 @@ async function handleLookingForGameApproval(
       inline: true
     });
 
-  await interaction.message.edit({
+  await requestMessage.edit({
     embeds: [updatedEmbed],
     components: []
   });
@@ -563,7 +727,7 @@ async function handleLookingForGameApproval(
       },
       {
         name: "Request message",
-        value: interaction.message.url,
+        value: requestMessage.url,
         inline: false
       }
     ]
@@ -591,12 +755,50 @@ async function handleLookingForGameApproval(
   ]);
 
   const failedDmCount = dmResults.filter((sent) => !sent).length;
+  const publicUpdateSent = await sendApprovalPublicUpdate(interaction, {
+    title: "Looking for Game Match Approved",
+    description: details.matchLabel,
+    color: requestColors.lookingForGame,
+    roleIds,
+    fields: [
+      {
+        name: "Scheduled at",
+        value: details.scheduledAt,
+        inline: true
+      },
+      {
+        name: "Map",
+        value: details.map,
+        inline: true
+      },
+      {
+        name: "Server",
+        value: details.server,
+        inline: true
+      },
+      {
+        name: "Calendar match ID",
+        value: calendarMatch.id,
+        inline: true
+      },
+      {
+        name: "Mentioned roles",
+        value: formatRoleMentions(roleIds),
+        inline: false
+      }
+    ]
+  });
 
   await interaction.followUp({
     content:
-      failedDmCount === 0
-        ? "The LFG match has been approved, added to the calendar, and both users were notified."
-        : `The LFG match has been approved and added to the calendar, but ${failedDmCount} DM notification(s) could not be sent.`,
+      [
+        failedDmCount === 0
+          ? "The LFG match has been approved, added to the calendar, and both users were notified."
+          : `The LFG match has been approved and added to the calendar, but ${failedDmCount} DM notification(s) could not be sent.`,
+        publicUpdateSent
+          ? "Public update posted."
+          : "Public updates channel is not configured or unavailable."
+      ].join("\n"),
     ephemeral: true
   });
 }
@@ -631,6 +833,261 @@ async function sendLookingForGameRejectionDms(
   ]);
 
   return dmResults.filter((sent) => sent).length;
+}
+
+async function promptForApprovalRoles(interaction: ButtonInteraction) {
+  const approvalContextId = interaction.id;
+
+  setPendingApproval(approvalContextId, {
+    channelId: interaction.channelId,
+    messageId: interaction.message.id,
+    reviewerId: interaction.user.id,
+    reviewCustomId: interaction.customId
+  });
+
+  await interaction.reply({
+    content: "Select the team role(s) to mention in the public confirmation update.",
+    components: [buildApprovalRoleSelectRow(approvalContextId)],
+    ephemeral: true
+  });
+}
+
+function isTransferRequestReview(customId: string) {
+  return (
+    customId.startsWith("approve_transfer_request:") ||
+    customId.startsWith("reject_transfer_request:")
+  );
+}
+
+function getGenericPublicUpdateColor(customId: string) {
+  if (isTransferRequestReview(customId)) return requestColors.transferRequest;
+
+  return requestColors.teamRegistration;
+}
+
+function buildGenericPublicUpdateFields(oldEmbed: Embed, roleIds: string[]) {
+  const fields = [
+    {
+      name: "Request ID",
+      value: getRequestId(oldEmbed),
+      inline: true
+    },
+    {
+      name: "Submitted by",
+      value: findEmbedField(oldEmbed, "Submitted by") ?? "Not provided.",
+      inline: true
+    },
+    {
+      name: "Mentioned roles",
+      value: formatRoleMentions(roleIds),
+      inline: false
+    }
+  ];
+
+  const teamName = findEmbedField(oldEmbed, "Team name");
+  const teamTag = findEmbedField(oldEmbed, "Team tag");
+  const player = findEmbedField(oldEmbed, "Player");
+  const currentTeam = findEmbedField(oldEmbed, "Current team");
+  const newTeam = findEmbedField(oldEmbed, "New team");
+
+  if (teamName) {
+    fields.splice(1, 0, {
+      name: "Team",
+      value: teamTag ? `${teamName} (${teamTag})` : teamName,
+      inline: true
+    });
+  }
+
+  if (player) {
+    fields.splice(
+      1,
+      0,
+      {
+        name: "Player",
+        value: player,
+        inline: true
+      },
+      {
+        name: "Transfer",
+        value: `${currentTeam ?? "Unknown team"} -> ${newTeam ?? "Unknown team"}`,
+        inline: false
+      }
+    );
+  }
+
+  return fields;
+}
+
+async function handleGenericApproval(
+  interaction: ApprovalInteraction,
+  requestMessage: Message,
+  oldEmbed: Embed,
+  roleIds: string[],
+  reviewCustomId: string
+) {
+  await interaction.deferUpdate();
+
+  const requestTitle = getRequestTitle(oldEmbed);
+  const submittedByUserId = extractSubmittedByUserId(oldEmbed);
+  const updatedEmbed = buildApprovedEmbed(oldEmbed, `${interaction.user}`);
+
+  await requestMessage.edit({
+    embeds: [updatedEmbed],
+    components: []
+  });
+
+  await sendAdminLog(interaction.client, {
+    title: "Request Approved",
+    description: requestTitle,
+    color: 0x57f287,
+    fields: [
+      {
+        name: "Request ID",
+        value: getRequestId(oldEmbed),
+        inline: true
+      },
+      {
+        name: "Submitted by",
+        value: findEmbedField(oldEmbed, "Submitted by") ?? "Not provided.",
+        inline: true
+      },
+      {
+        name: "Reviewed by",
+        value: `${interaction.user}`,
+        inline: true
+      },
+      {
+        name: "Request message",
+        value: requestMessage.url,
+        inline: false
+      }
+    ]
+  });
+
+  const publicUpdateSent = await sendApprovalPublicUpdate(interaction, {
+    title: `Approved - ${requestTitle}`,
+    description: "A league request has been approved by administration.",
+    color: getGenericPublicUpdateColor(reviewCustomId),
+    roleIds,
+    fields: buildGenericPublicUpdateFields(oldEmbed, roleIds)
+  });
+
+  let dmSent = false;
+
+  if (submittedByUserId) {
+    dmSent = await trySendApprovalDm(interaction, submittedByUserId, requestTitle);
+  }
+
+  await interaction.followUp({
+    content: [
+      dmSent
+        ? "The request has been approved and the user has been notified by DM."
+        : "The request has been approved, but I could not send a DM to the user. They may have DMs disabled.",
+      publicUpdateSent
+        ? "Public update posted."
+        : "Public updates channel is not configured or unavailable."
+    ].join("\n"),
+    ephemeral: true
+  });
+}
+
+async function executeApproval(
+  interaction: ApprovalInteraction,
+  reviewCustomId: string,
+  requestMessage: Message,
+  oldEmbed: Embed,
+  roleIds: string[]
+) {
+  if (reviewCustomId.startsWith("approve_lfg_match:")) {
+    await handleLookingForGameApproval(interaction, requestMessage, oldEmbed, roleIds);
+    return;
+  }
+
+  if (reviewCustomId.startsWith("approve_match_reschedule:")) {
+    await handleMatchRescheduleApproval(interaction, requestMessage, oldEmbed, roleIds);
+    return;
+  }
+
+  if (reviewCustomId.startsWith("approve_server_booking:")) {
+    await handleServerBookingApproval(interaction, requestMessage, oldEmbed, roleIds);
+    return;
+  }
+
+  await handleGenericApproval(
+    interaction,
+    requestMessage,
+    oldEmbed,
+    roleIds,
+    reviewCustomId
+  );
+}
+
+export async function handleApprovalRoleSelect(
+  interaction: RoleSelectMenuInteraction
+) {
+  if (!interaction.customId.startsWith(approvalRoleSelectPrefix)) return false;
+
+  const approvalContextId = interaction.customId.slice(
+    approvalRoleSelectPrefix.length
+  );
+  const context = popPendingApproval(approvalContextId);
+
+  if (!context) {
+    await interaction.update({
+      content: "This approval session expired. Please click Approve again.",
+      components: []
+    });
+    return true;
+  }
+
+  if (context.reviewerId !== interaction.user.id) {
+    await interaction.update({
+      content: "This approval session belongs to another reviewer.",
+      components: []
+    });
+    return true;
+  }
+
+  const memberPermissions = interaction.memberPermissions;
+
+  if (!memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+    await interaction.update({
+      content: "Only server administrators can approve requests.",
+      components: []
+    });
+    return true;
+  }
+
+  const channel = await interaction.client.channels.fetch(context.channelId);
+
+  if (!channel || channel.type !== ChannelType.GuildText) {
+    await interaction.update({
+      content: "Could not find the request channel.",
+      components: []
+    });
+    return true;
+  }
+
+  const requestMessage = await channel.messages.fetch(context.messageId);
+  const oldEmbed = requestMessage.embeds[0];
+
+  if (!oldEmbed) {
+    await interaction.update({
+      content: "This request message does not contain an embed.",
+      components: []
+    });
+    return true;
+  }
+
+  await executeApproval(
+    interaction,
+    context.reviewCustomId,
+    requestMessage,
+    oldEmbed,
+    interaction.values
+  );
+
+  return true;
 }
 
 export async function handleReviewButton(interaction: ButtonInteraction) {
@@ -688,75 +1145,7 @@ export async function handleReviewButton(interaction: ButtonInteraction) {
     return true;
   }
 
-  if (interaction.customId.startsWith("approve_lfg_match:")) {
-    await handleLookingForGameApproval(interaction, oldEmbed);
-    return true;
-  }
-
-  if (interaction.customId.startsWith("approve_match_reschedule:")) {
-    await handleMatchRescheduleApproval(interaction, oldEmbed);
-    return true;
-  }
-
-  if (interaction.customId.startsWith("approve_server_booking:")) {
-    await handleServerBookingApproval(interaction, oldEmbed);
-    return true;
-  }
-
-  const requestTitle = getRequestTitle(oldEmbed);
-  const submittedByUserId = extractSubmittedByUserId(oldEmbed);
-  const updatedEmbed = buildApprovedEmbed(oldEmbed, `${interaction.user}`);
-
-  await interaction.update({
-    embeds: [updatedEmbed],
-    components: []
-  });
-
-  await sendAdminLog(interaction.client, {
-    title: "Request Approved",
-    description: requestTitle,
-    color: 0x57f287,
-    fields: [
-      {
-        name: "Request ID",
-        value: getRequestId(oldEmbed),
-        inline: true
-      },
-      {
-        name: "Submitted by",
-        value: findEmbedField(oldEmbed, "Submitted by") ?? "Not provided.",
-        inline: true
-      },
-      {
-        name: "Reviewed by",
-        value: `${interaction.user}`,
-        inline: true
-      },
-      {
-        name: "Request message",
-        value: interaction.message.url,
-        inline: false
-      }
-    ]
-  });
-
-  let dmSent = false;
-
-  if (submittedByUserId) {
-    dmSent = await trySendApprovalDm(
-      interaction,
-      submittedByUserId,
-      requestTitle
-    );
-  }
-
-  if (!dmSent) {
-    await interaction.followUp({
-      content:
-        "The request has been approved, but I could not send a DM to the user. They may have DMs disabled.",
-      ephemeral: true
-    });
-  }
+  await promptForApprovalRoles(interaction);
 
   return true;
 }
